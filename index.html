@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body { width:100%; height:100%; overflow:hidden; background:#fafafa; }
+    #root {
+      position:relative;
+      width:100%;
+      height:100%;
+      min-height:500px;
+      overflow:hidden;
+      background:#f5f5f5;
+      perspective:1200px;
+      perspective-origin:50% 50%;
+      --tw:200px; --th:132px; --gap:18px; --radius:14px; --lift:64px; --dim:0.55;
+    }
+    /* 渐变遮罩（兼容所有浏览器） */
+    #root::after {
+      content:'';
+      position:absolute;
+      inset:0;
+      pointer-events:none;
+      z-index:5;
+      background:radial-gradient(ellipse 78% 82% at 50% 46%, transparent 40%, rgba(255,255,255,0.7) 100%),
+                 linear-gradient(to top, transparent 40%, rgba(255,255,255,0.7) 100%);
+      mix-blend-mode:lighten;
+    }
+    .plane {
+      position:absolute;
+      top:50%;
+      left:50%;
+      display:flex;
+      flex-direction:row;
+      transform-style:preserve-3d;
+      transform-origin:50% 50%;
+      will-change:transform;
+      min-width:100%;
+      min-height:100%;
+      cursor:pointer;
+    }
+    .col {
+      position:relative;
+      width:calc(var(--tw) + var(--gap));
+      flex-shrink:0;
+      transform-style:preserve-3d;
+    }
+    .track {
+      display:flex;
+      flex-direction:column;
+      will-change:transform;
+      transform-style:preserve-3d;
+    }
+    .tile {
+      position:relative;
+      display:block;
+      width:100%;
+      height:calc(var(--th) + var(--gap));
+      flex:0 0 auto;
+      outline:none;
+      transform-style:preserve-3d;
+    }
+    .inner {
+      position:absolute;
+      inset:calc(var(--gap)/2);
+      border-radius:var(--radius);
+      overflow:hidden;
+      background:#e8e8e8;
+      opacity:var(--dim);
+      transform:translateZ(0);
+      transition:transform 0.4s ease, opacity 0.4s ease, box-shadow 0.4s ease;
+      pointer-events:none;
+    }
+    .tile img {
+      width:100%;
+      height:100%;
+      object-fit:cover;
+      display:block;
+      user-select:none;
+      -webkit-user-drag:none;
+      background:#ddd;
+      filter:saturate(0.92);
+      transition:filter 0.4s ease;
+    }
+    .overlay {
+      position:absolute;
+      inset:0;
+      background:#fff;
+      opacity:0.42;
+      pointer-events:none;
+      transition:opacity 0.4s ease;
+    }
+    .tile.is-active .inner,
+    .tile:focus-visible .inner {
+      opacity:1;
+      transform:translateZ(var(--lift));
+      box-shadow:0 24px 60px -18px rgba(0,0,0,0.18);
+    }
+    .tile.is-active img,
+    .tile:focus-visible img {
+      filter:saturate(1.05);
+    }
+    .tile.is-active .overlay,
+    .tile:focus-visible .overlay {
+      opacity:0;
+    }
+    #placeholder {
+      position:absolute;
+      inset:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background:#f5f5f5;
+      color:#aaa;
+      font-family:sans-serif;
+      font-size:16px;
+      z-index:10;
+      pointer-events:none;
+      transition:opacity 0.5s;
+    }
+    #placeholder.hidden { opacity:0; }
+    .reduced .plane, .reduced .track { will-change:auto; }
+    .reduced .inner { transition-duration:0.2s; }
+  </style>
+</head>
+<body>
+  <div id="root">
+    <div id="placeholder">⏳ 加载中…</div>
+    <div class="plane"></div>
+  </div>
+  <script>
+    (function(){
+      'use strict';
+      // ---------- 配置 ----------
+      const CFG = {
+        columns:5, tileW:200, tileH:132, gap:18, tilt:16, turn:-14, depth:120,
+        speed:42, direction:'up', variance:0.45, parallax:0.6, pauseOnHover:false,
+        lift:64, dim:0.55
+      };
+      // ---------- 图片（Wix CDN） ----------
+      const IMAGES = [
+        'https://static.wixstatic.com/media/5026af_351e198c370c48a484aa12d5d4610d98~mv2.png',
+        'https://static.wixstatic.com/media/5026af_e80fd3601a07410991df7741faaa3857~mv2.png',
+        'https://static.wixstatic.com/media/5026af_a5a3d6db9e4d404abaf6340a39e0c577~mv2.png',
+        'https://static.wixstatic.com/media/5026af_06344d9c8ecb4759927e8083c41ab989~mv2.png',
+        'https://static.wixstatic.com/media/5026af_555eb28f82034ab9b4a0fb3150ec6888~mv2.png',
+        'https://static.wixstatic.com/media/5026af_b705f4a1971844d5a2b759df812a023f~mv2.png',
+        'https://static.wixstatic.com/media/5026af_0838185b5482432ba54c4b2100a43639~mv2.png',
+        'https://static.wixstatic.com/media/5026af_4374498fb6994e30af99ecd693b446a2~mv2.png',
+        'https://static.wixstatic.com/media/5026af_cb6f12afac164e64b815fca265de4e55~mv2.png',
+        'https://static.wixstatic.com/media/5026af_00d060f0b9e547ff9b9f450ba2490153~mv2.png',
+        'https://static.wixstatic.com/media/5026af_da484a830050404189dd931d08b6a14e~mv2.png',
+        'https://static.wixstatic.com/media/5026af_4d5ab4e9898c4b95bdcba98b03f1bca5~mv2.png',
+        'https://static.wixstatic.com/media/5026af_8601cc3281a6458889b5d6ba0da1be58~mv2.jpg',
+        'https://static.wixstatic.com/media/5026af_ec29b68cb9e745b98a1f186faff3f6b0~mv2.jpg'
+      ];
+
+      // ---------- 工具 ----------
+      function shuffle(a){ let b=[...a]; for(let i=b.length-1;i>0;i--){ let j=Math.floor(Math.random()*(i+1)); [b[i],b[j]]=[b[j],b[i]]; } return b; }
+      function getH(el){ if(!el) return 600; let r=el.getBoundingClientRect(), h=r.height; if(h<10){ let s=getComputedStyle(el); h=parseFloat(s.height)||600; } if(h<10 && el.parentElement) h=el.parentElement.getBoundingClientRect().height; return Math.max(400, h||600); }
+      function prefReduced(){ return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+
+      // ---------- DOM ----------
+      const root = document.getElementById('root');
+      if(!root){ document.body.innerHTML='<div style="padding:20px;color:#999;">初始化失败</div>'; return; }
+      const plane = root.querySelector('.plane');
+      const placeholder = document.getElementById('placeholder');
+
+      // ---------- 状态 ----------
+      let reduced = prefReduced();
+      let tracks=[], offsets=[], velocities=[], hoverCol=-1, wallHover=false;
+      let pointer={x:0,y:0}, pointerDamped={x:0,y:0}, lastTs=null, rafId=null, destroyed=false;
+      let containerH=600;
+
+      // 打乱图片
+      let items = shuffle(IMAGES).map((u,i)=>({image:u, title:'Img '+(i+1), href:''}));
+
+      function buildColumns(){
+        const cols = Array.from({length:CFG.columns},()=>[]);
+        items.forEach((it,i)=> cols[i%CFG.columns].push(it));
+        return cols.map(col=> col.length?col:[items[0]||{image:'',title:'Place'}]);
+      }
+      let columnItems = buildColumns();
+
+      function getColMeta(h){
+        const unit = CFG.tileH + CFG.gap;
+        return columnItems.map(col=>{
+          const copyH = Math.max(unit, col.length*unit);
+          const copies = Math.max(2, Math.ceil((h*1.6)/copyH)+1);
+          return {copyH, copies};
+        });
+      }
+      let colMeta = getColMeta(containerH);
+
+      // ---------- 渲染 ----------
+      function render(){
+        if(destroyed) return;
+        try{
+          const h = getH(root);
+          containerH = Math.max(400, h);
+          if(containerH<400) containerH=600;
+          colMeta = getColMeta(containerH);
+          plane.innerHTML = '';
+          tracks = [];
+
+          columnItems.forEach((col, cIdx)=>{
+            const meta = colMeta[cIdx];
+            if(!meta) return;
+            const colWrap = document.createElement('div');
+            colWrap.className = 'col';
+            const track = document.createElement('div');
+            track.className = 'track';
+            tracks[cIdx] = track;
+            for(let cp=0; cp<meta.copies; cp++){
+              col.forEach((item, itemIdx)=>{
+                const tileId = cIdx+'-'+cp+'-'+itemIdx;
+                const tile = document.createElement('div');
+                tile.className = 'tile';
+                tile.setAttribute('tabindex','0');
+                tile.setAttribute('role','button');
+                tile.setAttribute('aria-label', item.title||'tile');
+                tile.dataset.tileId = tileId;
+                tile.dataset.col = cIdx;
+                const inner = document.createElement('div');
+                inner.className = 'inner';
+                const img = document.createElement('img');
+                img.src = item.image;
+                img.alt = item.title||'';
+                img.loading = 'lazy';
+                img.decoding = 'async';
+                img.draggable = false;
+                img.crossOrigin = 'anonymous';
+                img.style.background = '#ddd';
+                // 图片加载失败时显示占位色块
+                img.onerror = function(){ this.style.background = '#ccc'; this.alt='图片加载失败'; };
+                const overlay = document.createElement('div');
+                overlay.className = 'overlay';
+                inner.appendChild(img);
+                inner.appendChild(overlay);
+                tile.appendChild(inner);
+                tile.addEventListener('focus', ()=>setActive(tileId, cIdx));
+                tile.addEventListener('blur', clearActive);
+                track.appendChild(tile);
+              });
+            }
+            colWrap.appendChild(track);
+            plane.appendChild(colWrap);
+          });
+
+          initOffsets();
+          applyTransform(pointerDamped.x, pointerDamped.y);
+          if(placeholder) placeholder.classList.add('hidden');
+          console.log('[DW] 渲染成功 高度:', containerH, '轨道:', tracks.length);
+        }catch(e){
+          console.error('[DW] 渲染错误:', e);
+          if(placeholder){ placeholder.textContent='⚠️ 渲染失败，请刷新'; placeholder.style.color='#d32f2f'; }
+        }
+      }
+
+      function setActive(id,col){ clearActive(); hoverCol=col; const el=root.querySelector('[data-tile-id="'+id+'"]'); if(el) el.classList.add('is-active'); }
+      function clearActive(){ root.querySelectorAll('.tile.is-active').forEach(el=>el.classList.remove('is-active')); hoverCol=-1; }
+
+      function applyTransform(px,py){ if(!plane) return; const tx=CFG.turn+px, ty=CFG.tilt+py; plane.style.transform='translate(-50%,-50%) scale(1.18) rotateX('+ty+'deg) rotateY('+tx+'deg) translateZ('+(-CFG.depth)+'px)'; }
+
+      function getBaseSpeeds(){
+        const dir = CFG.direction==='up'?1:-1;
+        return columnItems.map((_,c)=>{
+          const alt = c%2===0?1:-1;
+          const factor = 1 + CFG.variance * (((c*0.6180339887+0.35)%1)*2-1);
+          return CFG.speed * dir * alt * factor;
+        });
+      }
+      function initOffsets(){ offsets = colMeta.map((meta,c)=> meta? meta.copyH*((c*0.37)%1):0); velocities = columnItems.map(()=>0); }
+
+      function animate(ts){
+        if(destroyed) return;
+        if(lastTs===null) lastTs=ts;
+        let dt = Math.min(0.05, (ts-lastTs)/1000);
+        lastTs=ts;
+        try{
+          const maxTilt = CFG.parallax*8;
+          const tx = pointer.x*maxTilt, ty = -pointer.y*maxTilt;
+          const damp = 1 - Math.exp(-dt/0.12);
+          pointerDamped.x += (tx - pointerDamped.x)*damp;
+          pointerDamped.y += (ty - pointerDamped.y)*damp;
+          applyTransform(pointerDamped.x, pointerDamped.y);
+
+          if(!reduced){
+            const base = getBaseSpeeds();
+            for(let c=0; c<tracks.length; c++){
+              const meta = colMeta[c];
+              if(!meta || !tracks[c]) continue;
+              const paused = wallHover && CFG.pauseOnHover;
+              const factor = (paused || hoverCol===c)?0:1;
+              const target = base[c]*factor;
+              const ease = 1 - Math.exp(-dt/(target===0?0.16:0.28));
+              velocities[c] += (target - velocities[c])*ease;
+              let next = (offsets[c]||0) + velocities[c]*dt;
+              next = ((next % meta.copyH) + meta.copyH) % meta.copyH;
+              offsets[c] = next;
+              tracks[c].style.transform = 'translate3d(0, '+(-next)+'px, 0)';
+            }
+          } else {
+            for(let c=0; c<tracks.length; c++){
+              if(tracks[c] && colMeta[c]){
+                const off = offsets[c]||0;
+                tracks[c].style.transform = 'translate3d(0, '+(-off)+'px, 0)';
+              }
+            }
+          }
+        }catch(_){}
+        rafId = requestAnimationFrame(animate);
+      }
+
+      function bindEvents(){
+        if(!root) return;
+        root.addEventListener('pointermove', function(e){
+          try{
+            const rect = root.getBoundingClientRect();
+            if(CFG.parallax>0 && !reduced && rect.width>0){
+              pointer.x = (e.clientX - rect.left)/rect.width - 0.5;
+              pointer.y = (e.clientY - rect.top)/rect.height - 0.5;
+            }
+            const hit = document.elementFromPoint(e.clientX, e.clientY);
+            if(!hit) return;
+            const tile = hit.closest('[data-tile-id]');
+            if(tile){
+              const tid = tile.dataset.tileId;
+              const c = Number(tile.dataset.col);
+              if(!isNaN(c)) setActive(tid, c);
+            }
+          }catch(_){}
+        }, {passive:true});
+        root.addEventListener('pointerenter', ()=>{ wallHover=true; });
+        root.addEventListener('pointerleave', ()=>{ wallHover=false; pointer.x=0; pointer.y=0; clearActive(); });
+
+        let timer=null;
+        window.addEventListener('resize', function(){
+          if(timer) clearTimeout(timer);
+          timer = setTimeout(()=>{
+            const h = getH(root);
+            if(h>100 && Math.abs(h-containerH)>20){ containerH=Math.max(400,h); render(); }
+            timer=null;
+          }, 200);
+        }, {passive:true});
+
+        try{
+          const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+          mq.addEventListener('change', function(e){
+            reduced = e.matches;
+            if(reduced) root.classList.add('reduced'); else root.classList.remove('reduced');
+          });
+        }catch(_){}
+      }
+
+      function init(){
+        try{
+          console.log('[DW] 初始化...');
+          root.style.display = 'block';
+          root.style.visibility = 'visible';
+          let h = getH(root);
+          if(h<200){ root.style.minHeight='600px'; root.style.height='600px'; h=600; }
+          containerH = Math.max(400,h);
+          render();
+          bindEvents();
+          if(rafId) cancelAnimationFrame(rafId);
+          lastTs=null;
+          rafId = requestAnimationFrame(animate);
+          setTimeout(()=>{ if(plane.children.length===0){ console.warn('[DW] 强制重绘'); render(); } }, 2000);
+          console.log('[DW] 初始化完成');
+        }catch(err){
+          console.error('[DW] 初始化失败:', err);
+          if(placeholder){ placeholder.textContent='❌ 加载失败，请刷新'; placeholder.style.color='#d32f2f'; }
+        }
+      }
+
+      function destroy(){ destroyed=true; if(rafId) cancelAnimationFrame(rafId); rafId=null; }
+      window.addEventListener('beforeunload', destroy);
+
+      if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
+      else init();
+      if(document.readyState==='complete' || document.readyState==='interactive'){
+        setTimeout(()=>{ if(!rafId && !destroyed) init(); }, 300);
+      }
+    })();
+  </script>
+</body>
+</html>
