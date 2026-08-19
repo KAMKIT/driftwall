@@ -1,23 +1,42 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     html, body { width:100%; height:100%; overflow:hidden; background:#fafafa; }
+
     #root {
       position:relative;
       width:100%;
       height:100%;
-      min-height:500px;
+      min-height:400px;
       overflow:hidden;
       background:#f5f5f5;
       perspective:1200px;
       perspective-origin:50% 50%;
-      --tw:200px; --th:132px; --gap:18px; --radius:14px; --lift:64px; --dim:0.55;
+      /* 默认桌面尺寸 */
+      --tw: 200px;
+      --th: 132px;
+      --gap: 18px;
+      --radius: 14px;
+      --lift: 50px;
+      --dim: 0.55;
     }
-    /* 渐变遮罩（兼容所有浏览器） */
+
+    /* 响应式尺寸 */
+    @media (max-width: 1023px) {
+      #root { --tw: 160px; --th: 106px; --gap: 14px; --radius: 12px; --lift: 40px; }
+    }
+    @media (max-width: 767px) {
+      #root { --tw: 130px; --th: 86px; --gap: 12px; --radius: 10px; --lift: 30px; }
+    }
+    @media (max-width: 479px) {
+      #root { --tw: 110px; --th: 73px; --gap: 10px; --radius: 8px; --lift: 25px; }
+    }
+
+    /* 遮罩 */
     #root::after {
       content:'';
       position:absolute;
@@ -28,6 +47,7 @@
                  linear-gradient(to top, transparent 40%, rgba(255,255,255,0.7) 100%);
       mix-blend-mode:lighten;
     }
+
     .plane {
       position:absolute;
       top:50%;
@@ -106,6 +126,7 @@
     .tile:focus-visible .overlay {
       opacity:0;
     }
+
     #placeholder {
       position:absolute;
       inset:0;
@@ -133,13 +154,31 @@
   <script>
     (function(){
       'use strict';
+
       // ---------- 配置 ----------
       const CFG = {
-        columns:5, tileW:200, tileH:132, gap:18, tilt:16, turn:-14, depth:120,
-        speed:42, direction:'up', variance:0.45, parallax:0.6, pauseOnHover:false,
-        lift:64, dim:0.55
+        tilt: 16,
+        turn: -14,
+        depth: 120,
+        speed: 38,          // 比原来稍慢，更柔和
+        direction: 'up',
+        variance: 0.45,
+        pauseOnHover: false,
+        lift: 64,
+        dim: 0.55,
+        maxRows: 5,         // 最多显示 5 行
       };
-      // ---------- 图片（Wix CDN） ----------
+
+      // ---------- 响应式列数 ----------
+      function getColumns() {
+        const w = window.innerWidth;
+        if (w >= 1024) return 5;
+        if (w >= 768) return 4;
+        if (w >= 480) return 3;
+        return 2;
+      }
+
+      // ---------- 图片数据 ----------
       const IMAGES = [
         'https://static.wixstatic.com/media/5026af_351e198c370c48a484aa12d5d4610d98~mv2.png',
         'https://static.wixstatic.com/media/5026af_e80fd3601a07410991df7741faaa3857~mv2.png',
@@ -159,7 +198,7 @@
 
       // ---------- 工具 ----------
       function shuffle(a){ let b=[...a]; for(let i=b.length-1;i>0;i--){ let j=Math.floor(Math.random()*(i+1)); [b[i],b[j]]=[b[j],b[i]]; } return b; }
-      function getH(el){ if(!el) return 600; let r=el.getBoundingClientRect(), h=r.height; if(h<10){ let s=getComputedStyle(el); h=parseFloat(s.height)||600; } if(h<10 && el.parentElement) h=el.parentElement.getBoundingClientRect().height; return Math.max(400, h||600); }
+      function getH(el){ if(!el) return 400; let r=el.getBoundingClientRect(), h=r.height; if(h<10){ let s=getComputedStyle(el); h=parseFloat(s.height)||400; } if(h<10 && el.parentElement) h=el.parentElement.getBoundingClientRect().height; return Math.max(300, h||400); }
       function prefReduced(){ return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
 
       // ---------- DOM ----------
@@ -172,36 +211,54 @@
       let reduced = prefReduced();
       let tracks=[], offsets=[], velocities=[], hoverCol=-1, wallHover=false;
       let pointer={x:0,y:0}, pointerDamped={x:0,y:0}, lastTs=null, rafId=null, destroyed=false;
-      let containerH=600;
+      let containerH=400;
+      let currentColumns = getColumns();
 
       // 打乱图片
       let items = shuffle(IMAGES).map((u,i)=>({image:u, title:'Img '+(i+1), href:''}));
 
-      function buildColumns(){
-        const cols = Array.from({length:CFG.columns},()=>[]);
-        items.forEach((it,i)=> cols[i%CFG.columns].push(it));
-        return cols.map(col=> col.length?col:[items[0]||{image:'',title:'Place'}]);
+      // 根据列数重建 items 分组
+      function buildColumnItems(cols) {
+        const colsArr = Array.from({length:cols},()=>[]);
+        items.forEach((it,i)=> colsArr[i%cols].push(it));
+        return colsArr.map(col=> col.length?col:[items[0]||{image:'',title:'Place'}]);
       }
-      let columnItems = buildColumns();
+      let columnItems = buildColumnItems(currentColumns);
 
-      function getColMeta(h){
-        const unit = CFG.tileH + CFG.gap;
-        return columnItems.map(col=>{
-          const copyH = Math.max(unit, col.length*unit);
-          const copies = Math.max(2, Math.ceil((h*1.6)/copyH)+1);
-          return {copyH, copies};
+      function getColMeta(h, cols) {
+        // 从 CSS 获取当前 tile 高度
+        const style = getComputedStyle(root);
+        const th = parseFloat(style.getPropertyValue('--th')) || 132;
+        const gap = parseFloat(style.getPropertyValue('--gap')) || 18;
+        const unit = th + gap;
+        // 行数限制：最多 CFG.maxRows，但至少保证能填满可见区域
+        // 我们取 maxRows，但为了滚动连续，多复制几份
+        const maxRows = CFG.maxRows;
+        // 每个列的实际图片数量
+        return columnItems.map(col => {
+          const colLen = col.length;
+          // 计算需要复制几份才能达到 maxRows 倍（保证滚动无缝）
+          const needed = Math.ceil(maxRows / colLen);
+          const copies = Math.max(3, needed + 1); // 至少 3 份确保连续
+          const copyH = colLen * unit;
+          return { copyH, copies };
         });
       }
-      let colMeta = getColMeta(containerH);
+      let colMeta = getColMeta(containerH, currentColumns);
 
       // ---------- 渲染 ----------
       function render(){
         if(destroyed) return;
         try{
           const h = getH(root);
-          containerH = Math.max(400, h);
-          if(containerH<400) containerH=600;
-          colMeta = getColMeta(containerH);
+          containerH = Math.max(300, h);
+          // 检测列数变化
+          const newCols = getColumns();
+          if(newCols !== currentColumns) {
+            currentColumns = newCols;
+            columnItems = buildColumnItems(currentColumns);
+          }
+          colMeta = getColMeta(containerH, currentColumns);
           plane.innerHTML = '';
           tracks = [];
 
@@ -233,8 +290,7 @@
                 img.draggable = false;
                 img.crossOrigin = 'anonymous';
                 img.style.background = '#ddd';
-                // 图片加载失败时显示占位色块
-                img.onerror = function(){ this.style.background = '#ccc'; this.alt='图片加载失败'; };
+                img.onerror = function(){ this.style.background = '#ccc'; this.alt='加载失败'; };
                 const overlay = document.createElement('div');
                 overlay.className = 'overlay';
                 inner.appendChild(img);
@@ -252,13 +308,14 @@
           initOffsets();
           applyTransform(pointerDamped.x, pointerDamped.y);
           if(placeholder) placeholder.classList.add('hidden');
-          console.log('[DW] 渲染成功 高度:', containerH, '轨道:', tracks.length);
+          console.log('[DW] 渲染成功 列数:', currentColumns, '高度:', containerH);
         }catch(e){
           console.error('[DW] 渲染错误:', e);
-          if(placeholder){ placeholder.textContent='⚠️ 渲染失败，请刷新'; placeholder.style.color='#d32f2f'; }
+          if(placeholder){ placeholder.textContent='⚠️ 渲染失败'; placeholder.style.color='#d32f2f'; }
         }
       }
 
+      // ---------- 激活管理 ----------
       function setActive(id,col){ clearActive(); hoverCol=col; const el=root.querySelector('[data-tile-id="'+id+'"]'); if(el) el.classList.add('is-active'); }
       function clearActive(){ root.querySelectorAll('.tile.is-active').forEach(el=>el.classList.remove('is-active')); hoverCol=-1; }
 
@@ -280,7 +337,9 @@
         let dt = Math.min(0.05, (ts-lastTs)/1000);
         lastTs=ts;
         try{
-          const maxTilt = CFG.parallax*8;
+          // 移动端视差降低
+          const parallaxScale = window.innerWidth < 768 ? 0.3 : CFG.parallax;
+          const maxTilt = parallaxScale * 8;
           const tx = pointer.x*maxTilt, ty = -pointer.y*maxTilt;
           const damp = 1 - Math.exp(-dt/0.12);
           pointerDamped.x += (tx - pointerDamped.x)*damp;
@@ -316,10 +375,11 @@
 
       function bindEvents(){
         if(!root) return;
+        // 移动端触摸事件
         root.addEventListener('pointermove', function(e){
           try{
             const rect = root.getBoundingClientRect();
-            if(CFG.parallax>0 && !reduced && rect.width>0){
+            if(rect.width>0 && !reduced){
               pointer.x = (e.clientX - rect.left)/rect.width - 0.5;
               pointer.y = (e.clientY - rect.top)/rect.height - 0.5;
             }
@@ -336,14 +396,25 @@
         root.addEventListener('pointerenter', ()=>{ wallHover=true; });
         root.addEventListener('pointerleave', ()=>{ wallHover=false; pointer.x=0; pointer.y=0; clearActive(); });
 
+        // 窗口变化时重新计算
         let timer=null;
-        window.addEventListener('resize', function(){
+        const onResize = ()=>{
           if(timer) clearTimeout(timer);
           timer = setTimeout(()=>{
+            const newCols = getColumns();
+            if(newCols !== currentColumns) {
+              currentColumns = newCols;
+              columnItems = buildColumnItems(currentColumns);
+            }
             const h = getH(root);
-            if(h>100 && Math.abs(h-containerH)>20){ containerH=Math.max(400,h); render(); }
+            if(h>100 && Math.abs(h-containerH)>20){ containerH=Math.max(300,h); render(); }
             timer=null;
           }, 200);
+        };
+        window.addEventListener('resize', onResize, {passive:true});
+        // 手机横竖屏切换
+        window.addEventListener('orientationchange', ()=>{
+          setTimeout(onResize, 300);
         }, {passive:true});
 
         try{
@@ -357,22 +428,24 @@
 
       function init(){
         try{
-          console.log('[DW] 初始化...');
+          console.log('[DW] 响应式初始化...');
           root.style.display = 'block';
           root.style.visibility = 'visible';
           let h = getH(root);
-          if(h<200){ root.style.minHeight='600px'; root.style.height='600px'; h=600; }
-          containerH = Math.max(400,h);
+          if(h<200){ root.style.minHeight='400px'; root.style.height='400px'; h=400; }
+          containerH = Math.max(300,h);
+          currentColumns = getColumns();
+          columnItems = buildColumnItems(currentColumns);
           render();
           bindEvents();
           if(rafId) cancelAnimationFrame(rafId);
           lastTs=null;
           rafId = requestAnimationFrame(animate);
           setTimeout(()=>{ if(plane.children.length===0){ console.warn('[DW] 强制重绘'); render(); } }, 2000);
-          console.log('[DW] 初始化完成');
+          console.log('[DW] 初始化完成 列数:', currentColumns);
         }catch(err){
           console.error('[DW] 初始化失败:', err);
-          if(placeholder){ placeholder.textContent='❌ 加载失败，请刷新'; placeholder.style.color='#d32f2f'; }
+          if(placeholder){ placeholder.textContent='❌ 加载失败'; placeholder.style.color='#d32f2f'; }
         }
       }
 
